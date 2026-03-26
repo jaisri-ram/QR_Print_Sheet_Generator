@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR Print Sheet Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Epilogue:wght@300;400;500&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink:     #0f0f0f;
+  --paper:   #f7f5f0;
+  --surface: #ffffff;
+  --rule:    #e2dfd8;
+  --muted:   #888480;
+  --accent:  #1a1a1a;
+  --green:   #1d6b45;
+  --green-l: #e8f5ee;
+  --amber:   #92540a;
+  --amber-l: #fef3e2;
+  --red:     #b92b2b;
+  --red-l:   #fdeaea;
+  --radius:  8px;
+}
+
+body {
+  font-family: 'Epilogue', sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ── HEADER ───────────────────────────────────────────────────────────── */
+header {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0 40px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand-icon {
+  width: 32px; height: 32px;
+  background: var(--paper);
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 3px; padding: 5px;
+}
+.brand-icon span {
+  background: var(--ink);
+  border-radius: 1px;
+  display: block;
+}
+.brand-icon span:last-child { background: var(--paper); border: 1.5px solid var(--ink); }
+.brand-name { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 15px; letter-spacing: -0.3px; }
+.brand-sub  { font-size: 12px; opacity: 0.5; margin-top: -2px; }
+.step-track { display: flex; align-items: center; gap: 6px; }
+.step-dot {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.25);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+  color: rgba(255,255,255,0.4);
+  transition: all 0.3s;
+}
+.step-dot.active { border-color: white; color: white; }
+.step-dot.done   { background: white; color: var(--ink); border-color: white; }
+.step-dash { width: 20px; height: 1px; background: rgba(255,255,255,0.2); }
+
+/* ── MAIN ─────────────────────────────────────────────────────────────── */
+main { max-width: 960px; margin: 0 auto; padding: 48px 24px 80px; }
+
+/* ── UPLOAD ZONE ─────────────────────────────────────────────────────── */
+#upload-section {}
+
+.section-label {
+  font-family: 'Syne', sans-serif;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+
+.drop-zone {
+  border: 2px dashed var(--rule);
+  border-radius: 16px;
+  padding: 72px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--surface);
+  position: relative;
+  overflow: hidden;
+}
+.drop-zone::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent, transparent 20px,
+    rgba(0,0,0,0.015) 20px, rgba(0,0,0,0.015) 40px
+  );
+  pointer-events: none;
+}
+.drop-zone:hover, .drop-zone.over {
+  border-color: var(--ink);
+  background: #f0ede6;
+}
+.drop-zone.over { transform: scale(1.01); }
+
+.drop-icon {
+  width: 60px; height: 60px;
+  background: var(--ink);
+  border-radius: 12px;
+  margin: 0 auto 20px;
+  display: flex; align-items: center; justify-content: center;
+}
+.drop-icon svg { width: 28px; height: 28px; fill: var(--paper); }
+.drop-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+.drop-sub { color: var(--muted); font-size: 13px; }
+.drop-sub strong { color: var(--ink); }
+#file-input { display: none; }
+
+/* ── PROGRESS ────────────────────────────────────────────────────────── */
+#progress-section { display: none; margin-top: 32px; }
+.progress-card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+}
+.progress-title {
+  font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
+  margin-bottom: 16px;
+}
+.progress-bar-bg {
+  height: 4px; background: var(--rule); border-radius: 100px;
+  overflow: hidden; margin-bottom: 10px;
+}
+.progress-bar-fill {
+  height: 100%; background: var(--ink); border-radius: 100px;
+  transition: width 0.3s; width: 0%;
+}
+.progress-msg { font-size: 12px; color: var(--muted); }
+
+/* ── REVIEW SECTION ──────────────────────────────────────────────────── */
+#review-section { display: none; margin-top: 40px; }
+
+.row-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.section-title {
+  font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px; border-radius: 100px;
+  font-size: 12px; font-weight: 500;
+}
+.pill-green { background: var(--green-l); color: var(--green); }
+.pill-amber { background: var(--amber-l); color: var(--amber); }
+
+/* QR grid */
+.qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 32px;
+}
+.qr-card {
+  background: var(--surface);
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 10px;
+  display: flex; flex-direction: column; align-items: center;
+  position: relative;
+  transition: border-color 0.15s;
+}
+.qr-card:hover { border-color: #bbb; }
+.qr-card img { width: 100%; max-width: 110px; height: auto; display: block; border-radius: 4px; }
+.qr-serial {
+  font-family: 'Syne', sans-serif;
+  font-size: 8px; font-weight: 600;
+  color: var(--muted);
+  margin-top: 6px;
+  text-align: center;
+  word-break: break-all;
+  line-height: 1.4;
+}
+.qr-num { font-size: 10px; font-weight: 600; color: var(--muted); margin-top: 4px; }
+.qr-del {
+  position: absolute; top: 5px; right: 5px;
+  width: 18px; height: 18px;
+  background: var(--red-l); color: var(--red);
+  border: none; border-radius: 50%; cursor: pointer;
+  font-size: 10px; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.15s;
+  line-height: 1;
+}
+.qr-card:hover .qr-del { opacity: 1; }
+
+/* ── SETTINGS ────────────────────────────────────────────────────────── */
+.settings-panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 28px;
+  margin-bottom: 24px;
+}
+.settings-panel h3 {
+  font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+  margin-bottom: 20px; letter-spacing: -0.2px;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 20px;
+}
+.field label {
+  display: block;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--muted); margin-bottom: 7px;
+}
+.field select, .field input[type="number"] {
+  width: 100%; height: 40px;
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  font-family: 'Epilogue', sans-serif;
+  font-size: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s;
+  appearance: none;
+}
+.field select:focus, .field input[type="number"]:focus { border-color: var(--ink); }
+
+.action-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+.btn {
+  height: 44px; padding: 0 24px;
+  border-radius: var(--radius);
+  font-family: 'Syne', sans-serif;
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer; border: 2px solid var(--ink);
+  transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.btn-primary { background: var(--ink); color: var(--paper); }
+.btn-primary:hover { background: #333; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-ghost { background: transparent; color: var(--ink); }
+.btn-ghost:hover { background: var(--ink); color: var(--paper); }
+
+/* ── PRINT PREVIEW ───────────────────────────────────────────────────── */
+#output-section { display: none; margin-top: 40px; }
+
+.preview-wrap {
+  background: #6b6b6b;
+  border-radius: 12px;
+  padding: 20px;
+  overflow: auto;
+  max-height: 600px;
+}
+
+.print-page {
+  background: white;
+  margin: 0 auto 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+}
+.print-page:last-child { margin-bottom: 0; }
+
+/* ── PRINT STYLES ────────────────────────────────────────────────────── */
+@media print {
+  body > *:not(#print-root) { display: none !important; }
+  #print-root {
+    display: block !important;
+    position: fixed; inset: 0;
+  }
+  #print-root .print-page {
+    page-break-after: always;
+    box-shadow: none;
+    margin: 0;
+  }
+}
+
+#print-root { display: none; }
+
+/* ── UTILS ───────────────────────────────────────────────────────────── */
+.hidden { display: none !important; }
+.spin {
+  width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty-state {
+  text-align: center; padding: 48px 24px;
+  color: var(--muted); font-size: 13px;
+}
+
+canvas { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-icon">
+      <span></span><span></span>
+      <span></span><span style="background:transparent;border:1.5px solid var(--paper);"></span>
+    </div>
+    <div>
+      <div class="brand-name">QR Sheet Generator</div>
+      <div class="brand-sub">Extract · Arrange · Print</div>
+    </div>
+  </div>
+  <div class="step-track">
+    <div class="step-dot active" id="sd1">1</div>
+    <div class="step-dash"></div>
+    <div class="step-dot" id="sd2">2</div>
+    <div class="step-dash"></div>
+    <div class="step-dot" id="sd3">3</div>
+    <div class="step-dash"></div>
+    <div class="step-dot" id="sd4">4</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- STEP 1: UPLOAD -->
+  <div id="upload-section">
+    <div class="section-label">Step 1 — Upload PDF</div>
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".pdf">
+      <div class="drop-icon">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/><path d="M12 11l-4 4h3v4h2v-4h3l-4-4z"/></svg>
+      </div>
+      <div class="drop-title">Drop your label PDF here</div>
+      <div class="drop-sub">
+        Supports the standard format: <strong>2 labels per page</strong>, QR code in the top-right corner<br>
+        <span style="margin-top:6px;display:block;">or <u style="cursor:pointer;" onclick="document.getElementById('file-input').click()">click to browse</u></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div id="progress-section">
+    <div class="progress-card">
+      <div class="progress-title" id="prog-title">Processing PDF…</div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="prog-bar"></div>
+      </div>
+      <div class="progress-msg" id="prog-msg">Starting…</div>
+    </div>
+  </div>
+
+  <!-- STEP 2 + 3: REVIEW & SETTINGS -->
+  <div id="review-section">
+
+    <div class="row-header">
+      <div class="section-title" id="review-title">QR Codes Extracted</div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span class="pill pill-green" id="count-pill">0 QR codes</span>
+        <button class="btn btn-ghost" style="height:36px;font-size:12px;" onclick="resetAll()">↺ Start over</button>
+      </div>
+    </div>
+
+    <div id="qr-grid" class="qr-grid"></div>
+
+    <!-- Settings -->
+    <div class="settings-panel">
+      <h3>Print Layout Settings</h3>
+      <div class="settings-grid">
+        <div class="field">
+          <label>QR codes per page</label>
+          <input type="number" id="per-page" value="10" min="1" max="50">
+        </div>
+        <div class="field">
+          <label>Columns</label>
+          <input type="number" id="cols" value="2" min="1" max="10">
+        </div>
+        <div class="field">
+          <label>Page size</label>
+          <select id="page-size">
+            <option value="A4">A4 (210 × 297 mm)</option>
+            <option value="Letter">Letter (216 × 279 mm)</option>
+            <option value="A3">A3 (297 × 420 mm)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>QR cell size (mm)</label>
+          <input type="number" id="cell-size" value="50" min="20" max="80">
+        </div>
+        <div class="field">
+          <label>Show serial number</label>
+          <select id="show-serial">
+            <option value="no">No — QR only</option>
+            <option value="yes">Yes — show below QR</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-row">
+      <button class="btn btn-primary" id="generate-btn" onclick="buildPrintSheet()">
+        Generate Print Sheet
+      </button>
+      <span id="gen-msg" style="font-size:13px;color:var(--muted);"></span>
+    </div>
+  </div>
+
+  <!-- STEP 4: OUTPUT -->
+  <div id="output-section">
+    <div class="row-header" style="margin-bottom:16px;">
+      <div class="section-title">Print Preview</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="triggerPrint()">🖨 Print</button>
+        <button class="btn btn-ghost" onclick="buildPrintSheet()">↺ Rebuild</button>
+      </div>
+    </div>
+    <div class="preview-wrap">
+      <div id="preview-area"></div>
+    </div>
+    <div id="print-root"></div>
+  </div>
+
+</main>
+
+<canvas id="work-canvas"></canvas>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* ── State ────────────────────────────────────────────────────────────── */
+let extractedQRs = [];   // [{dataUrl, serial, pageNum}]
+
+/* ── DOM refs ─────────────────────────────────────────────────────────── */
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+/* ── Upload wiring ───────────────────────────────────────────────────── */
+dropZone.onclick = () => fileInput.click();
+dropZone.ondragover  = e => { e.preventDefault(); dropZone.classList.add('over'); };
+dropZone.ondragleave = () => dropZone.classList.remove('over');
+dropZone.ondrop = e => {
+  e.preventDefault(); dropZone.classList.remove('over');
+  if (e.dataTransfer.files[0]) processPDF(e.dataTransfer.files[0]);
+};
+fileInput.onchange = e => { if (e.target.files[0]) processPDF(e.target.files[0]); };
+
+/* ── Progress helpers ────────────────────────────────────────────────── */
+function setProgress(pct, msg) {
+  document.getElementById('progress-section').style.display = 'block';
+  document.getElementById('prog-bar').style.width = pct + '%';
+  document.getElementById('prog-msg').textContent = msg;
+}
+
+/* ── Step tracker ────────────────────────────────────────────────────── */
+function setStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById('sd' + i);
+    el.className = 'step-dot' +
+      (i < n ? ' done' : i === n ? ' active' : '');
+    el.textContent = i < n ? '✓' : i;
+  }
+}
+
+/* ── Main PDF processor ──────────────────────────────────────────────── */
+async function processPDF(file) {
+  extractedQRs = [];
+  setStep(2);
+  setProgress(5, `Loading "${file.name}"…`);
+
+  const buf  = await file.arrayBuffer();
+  const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
+  const total = pdf.numPages;
+
+  setProgress(10, `${total} page(s) found. Extracting QR codes…`);
+
+  for (let p = 1; p <= total; p++) {
+    const pct = 10 + Math.round((p / total) * 80);
+    setProgress(pct, `Page ${p} of ${total}…`);
+    await extractQRsFromPage(pdf, p);
+    await tick();   // keep UI responsive
+  }
+
+  setProgress(100, `Done — ${extractedQRs.length} QR code(s) extracted.`);
+  await delay(400);
+
+  renderReview();
+  setStep(3);
+  document.getElementById('review-section').style.display = 'block';
+  document.getElementById('progress-section').style.display = 'none';
+}
+
+/* ── Extract QRs from one PDF page ──────────────────────────────────── */
+async function extractQRsFromPage(pdf, pageNum) {
+  const page     = await pdf.getPage(pageNum);
+  const viewport = page.getViewport({ scale: 2.5 });
+  const canvas   = document.getElementById('work-canvas');
+  canvas.width   = viewport.width;
+  canvas.height  = viewport.height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const HALF = Math.floor(H / 2);
+
+  // Each PDF page has 2 labels stacked vertically
+  // QR + number sits in the top-right of each label
+  // Calibrated from the known PDF format:
+  //   - QR region starts at ~71.5% across the page
+  //   - QR top: ~22% into the label height
+  //   - QR bottom (incl. number text): ~48% into the label height
+
+  const X_FRAC   = 0.715;   // left boundary of QR+number block
+  const Y_T_FRAC = 0.220;   // top of QR (relative to label height)
+  const Y_B_FRAC = 0.480;   // bottom of number text (relative to label height)
+
+  for (let labelIdx = 0; labelIdx < 2; labelIdx++) {
+    const labelTop = labelIdx * HALF;
+    const lH       = HALF;
+
+    const x0 = Math.floor(W * X_FRAC);
+    const y0 = labelTop + Math.floor(lH * Y_T_FRAC);
+    const x1 = W - 4;
+    const y1 = labelTop + Math.floor(lH * Y_B_FRAC);
+
+    // Grab the region
+    const regionW = x1 - x0;
+    const regionH = y1 - y0;
+    if (regionW <= 0 || regionH <= 0) continue;
+
+    const imgData = ctx.getImageData(x0, y0, regionW, regionH);
+
+    // Auto-trim: find bounding box of dark pixels
+    const d = imgData.data;
+    let rMin = regionH, rMax = 0, cMin = regionW, cMax = 0;
+    for (let r = 0; r < regionH; r++) {
+      for (let c = 0; c < regionW; c++) {
+        const i = (r * regionW + c) * 4;
+        const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+        if (lum < 80) {
+          if (r < rMin) rMin = r;
+          if (r > rMax) rMax = r;
+          if (c < cMin) cMin = c;
+          if (c > cMax) cMax = c;
+        }
+      }
+    }
+
+    if (rMin >= rMax || cMin >= cMax) continue;  // nothing found
+
+    // Add padding around tight bbox
+    const pad = 12;
+    const cr0 = Math.max(0, cMin - pad);
+    const rr0 = Math.max(0, rMin - pad);
+    const cr1 = Math.min(regionW, cMax + pad);
+    const rr1 = Math.min(regionH, rMax + pad);
+
+    // Draw cropped region onto a temp canvas
+    const tmp = document.createElement('canvas');
+    tmp.width  = cr1 - cr0;
+    tmp.height = rr1 - rr0;
+    const tc = tmp.getContext('2d');
+    tc.drawImage(canvas,
+      x0 + cr0, y0 + rr0, tmp.width, tmp.height,
+      0, 0, tmp.width, tmp.height
+    );
+
+    // Only keep if it actually has a reasonable dark-pixel density (real QR)
+    const testData = tc.getImageData(0, 0, tmp.width, tmp.height).data;
+    let darkPx = 0;
+    for (let i = 0; i < testData.length; i += 4) {
+      if (0.299*testData[i] + 0.587*testData[i+1] + 0.114*testData[i+2] < 80) darkPx++;
+    }
+    const density = darkPx / (tmp.width * tmp.height);
+    if (density < 0.03 || density > 0.7) continue;
+
+    // Extract serial number from text layer
+    let serial = '';
+    try {
+      const textContent = await page.getTextContent();
+      const items        = textContent.items;
+      // The serial numbers match pattern (00)XXXXXXXXXXXXXXXXXX
+      for (const item of items) {
+        const s = item.str.trim();
+        if (/^\(00\)\d{18,}$/.test(s) || /^\(00\)\d{15,}$/.test(s)) {
+          // Figure out which label this text belongs to (by y position)
+          // PDF coordinates are bottom-up; page height in pts ≈ 841
+          const pageHeightPts = viewport.height / 2.5;
+          const textYPt = item.transform[5];
+          // For label 1 (top): textYPt > pageHeightPts/2
+          // For label 2 (bottom): textYPt < pageHeightPts/2
+          const isTopLabel = textYPt > pageHeightPts / 2;
+          if ((labelIdx === 0 && isTopLabel) || (labelIdx === 1 && !isTopLabel)) {
+            serial = s;
+            break;
+          }
+        }
+      }
+      // Fallback: if only one match on whole page, use it for both labels
+      if (!serial) {
+        const allSerials = items
+          .map(i => i.str.trim())
+          .filter(s => /^\(00\)\d{10,}$/.test(s));
+        if (allSerials[labelIdx]) serial = allSerials[labelIdx];
+      }
+    } catch(e) {}
+
+    extractedQRs.push({
+      dataUrl:  tmp.toDataURL('image/png'),
+      serial:   serial || `QR-P${pageNum}-${labelIdx + 1}`,
+      pageNum,
+      labelIdx
+    });
+  }
+}
+
+/* ── Render review grid ──────────────────────────────────────────────── */
+function renderReview() {
+  const grid  = document.getElementById('qr-grid');
+  const pill  = document.getElementById('count-pill');
+  const title = document.getElementById('review-title');
+
+  grid.innerHTML = '';
+  pill.textContent = `${extractedQRs.length} QR code${extractedQRs.length !== 1 ? 's' : ''}`;
+  title.textContent = `${extractedQRs.length} QR Code${extractedQRs.length !== 1 ? 's' : ''} Extracted`;
+
+  if (extractedQRs.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
+      No QR codes found. Make sure the PDF uses the standard 2-labels-per-page format.</div>`;
+    return;
+  }
+
+  extractedQRs.forEach((qr, idx) => {
+    const card = document.createElement('div');
+    card.className = 'qr-card';
+    // Show abbreviated serial — last 8 digits
+    const shortSerial = qr.serial.length > 12 ? '…' + qr.serial.slice(-10) : qr.serial;
+    card.innerHTML = `
+      <img src="${qr.dataUrl}" alt="QR ${idx+1}">
+      <div class="qr-serial">${qr.serial}</div>
+      <button class="qr-del" onclick="removeQR(${idx})" title="Remove">✕</button>
+    `;
+    grid.appendChild(card);
+  });
+
+  // Update pages-needed count
+  const per = parseInt(document.getElementById('per-page').value) || 10;
+  document.getElementById('gen-msg').textContent =
+    `Will produce ${Math.ceil(extractedQRs.length / per)} print page(s)`;
+}
+
+function removeQR(idx) {
+  extractedQRs.splice(idx, 1);
+  renderReview();
+}
+
+/* ── Build print sheet ────────────────────────────────────────────────── */
+function buildPrintSheet() {
+  if (extractedQRs.length === 0) { alert('No QR codes to print.'); return; }
+
+  const perPage    = Math.max(1, parseInt(document.getElementById('per-page').value)  || 10);
+  const cols       = Math.max(1, parseInt(document.getElementById('cols').value)      || 5);
+  const cellSizeMm = Math.max(20, parseInt(document.getElementById('cell-size').value) || 38);
+  const showSerial = document.getElementById('show-serial').value === 'yes';
+  const pageSizeKey = document.getElementById('page-size').value;
+
+  const pageSizes = { A4: [210, 297], Letter: [216, 279], A3: [297, 420] };
+  const [pgW, pgH] = pageSizes[pageSizeKey];
+
+  const rows       = Math.ceil(perPage / cols);
+  const marginMm   = 10;
+  const gapHMm     = 4;
+  const gapVMm     = 5;
+
+  // Cell width fills the page
+  const totalCellW = pgW - 2*marginMm - (cols-1)*gapHMm;
+  const cellWMm    = totalCellW / cols;
+
+  // Cell height = fixed from setting
+  const cellHMm = cellSizeMm;
+
+  // Total grid height
+  const gridH = rows * cellHMm + (rows-1)*gapVMm;
+
+  const previewArea = document.getElementById('preview-area');
+  const printRoot   = document.getElementById('print-root');
+  previewArea.innerHTML = '';
+  printRoot.innerHTML   = '';
+
+  // Chunk QRs into pages
+  const chunks = [];
+  for (let i = 0; i < extractedQRs.length; i += perPage)
+    chunks.push(extractedQRs.slice(i, i + perPage));
+
+  chunks.forEach(chunk => {
+    const page = createPrintPage(chunk, {
+      pgW, pgH, cols, rows, cellWMm, cellHMm,
+      marginMm, gapHMm, gapVMm, gridH, showSerial
+    });
+    previewArea.appendChild(page.cloneNode(true));
+    printRoot.appendChild(page);
+  });
+
+  setStep(4);
+  document.getElementById('output-section').style.display = 'block';
+  document.getElementById('output-section').scrollIntoView({ behavior: 'smooth' });
+
+  document.getElementById('gen-msg').textContent =
+    `${chunks.length} print page(s) ready`;
+}
+
+function createPrintPage(qrs, cfg) {
+  const { pgW, pgH, cols, cellWMm, cellHMm,
+          marginMm, gapHMm, gapVMm, gridH, showSerial } = cfg;
+
+  const SCALE = 3.5;   // px per mm in the preview DOM element
+  const pw = pgW * SCALE;
+  const ph = pgH * SCALE;
+
+  const page = document.createElement('div');
+  page.className = 'print-page';
+  page.style.cssText = `
+    width:${pw}px; height:${ph}px;
+    position:relative; overflow:hidden;
+    background:white;
+  `;
+
+  // Vertically centre the grid
+  const vOffset = (pgH - gridH) / 2;
+
+  qrs.forEach((qr, idx) => {
+    const row = Math.floor(idx / cols);
+    const col = idx % cols;
+
+    const xMm = marginMm + col * (cellWMm + gapHMm);
+    const yMm = vOffset  + row * (cellHMm + gapVMm);
+
+    const cell = document.createElement('div');
+    cell.style.cssText = `
+      position:absolute;
+      left:${xMm * SCALE}px; top:${yMm * SCALE}px;
+      width:${cellWMm * SCALE}px; height:${cellHMm * SCALE}px;
+      border:0.5px solid #d0d0d0;
+      border-radius:4px;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      padding:4px;
+      background:white;
+    `;
+
+    const img = document.createElement('img');
+    img.src = qr.dataUrl;
+    img.style.cssText = `
+      max-width:100%; max-height:${showSerial ? '75%' : '92%'};
+      object-fit:contain; display:block;
+    `;
+
+    cell.appendChild(img);
+
+    if (showSerial && qr.serial) {
+      const lbl = document.createElement('div');
+      lbl.textContent = qr.serial;
+      lbl.style.cssText = `
+        font-family: monospace;
+        font-size:${Math.max(5, cellWMm * SCALE * 0.055)}px;
+        text-align:center;
+        color:#111;
+        margin-top:3px;
+        line-height:1.2;
+        word-break:break-all;
+      `;
+      cell.appendChild(lbl);
+    }
+
+    page.appendChild(cell);
+  });
+
+  return page;
+}
+
+/* ── Print ───────────────────────────────────────────────────────────── */
+function triggerPrint() {
+  // Build a clean print window with all pages
+  const printRoot = document.getElementById('print-root');
+  const w = window.open('', '_blank', 'width=900,height=700');
+  w.document.write(`<!DOCTYPE html><html><head><title>QR Print Sheet</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: white; }
+    .print-page { page-break-after: always; position: relative; overflow: hidden; background: white; }
+    @page { size: auto; margin: 0; }
+    @media print { body { margin: 0; } .print-page:last-child { page-break-after: auto; } }
+  </style></head><body>`);
+  w.document.write(printRoot.innerHTML);
+  w.document.write('</body></html>');
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 600);
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────── */
+function resetAll() {
+  extractedQRs = [];
+  document.getElementById('review-section').style.display  = 'none';
+  document.getElementById('output-section').style.display  = 'none';
+  document.getElementById('progress-section').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  setStep(1);
+}
+
+/* ── Helpers ─────────────────────────────────────────────────────────── */
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+function tick()    { return new Promise(r => requestAnimationFrame(r)); }
+
+// Live update page count estimate
+['per-page', 'cols'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', () => {
+    if (extractedQRs.length === 0) return;
+    const per = parseInt(document.getElementById('per-page').value) || 10;
+    document.getElementById('gen-msg').textContent =
+      `Will produce ${Math.ceil(extractedQRs.length / per)} print page(s)`;
+  });
+});
+</script>
+</body>
+</html>
